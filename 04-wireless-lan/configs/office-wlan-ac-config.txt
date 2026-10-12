@@ -1,0 +1,145 @@
+================================================================
+说明（以下是提示，请勿粘贴；配置从 system-view 那行开始）
+================================================================
+1. AP 的 MAC 已修正为 eNSP 实际值：
+   BGS-AP7050-1 = 00e0-fc3e-7d80
+   BGS-AP7050-2 = 00e0-fc61-3570
+   若换新 AP 或重开 eNSP，先 display ap all 或看 DHCP 的 Client-ID
+   拿到真实 MAC，再改下面 ap-id 1/2 的 ap-mac（必须 12 位十六进制）。
+
+2. 粘贴时有两个交互提示，都要输入 y 回车：
+   - security wpa2 ... aes 这行会弹 [Y/N]（弱密码警告）——下面已放了一个 y
+   - 最后的 save 会弹保存确认——末尾已放 y，若再问"覆盖"再输一次 y
+
+3. 若 AP 上线后 Group 显示 default（没进 BGS），在 wlan 视图补：
+   ap-id 0  →  ap-group BGS；ap-id 1  →  ap-group BGS
+   （ID 以 display ap all 实际显示的为准）
+
+================================================================
+
+system-view
+sysname AC
+
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin password irreversible-cipher __LAB_PASSWORD__
+local-user admin service-type telnet
+local-user admin privilege level 15
+quit
+
+vlan 10
+name guest
+quit
+vlan 20
+name office
+quit
+vlan 99
+name AP-Guanli
+quit
+
+interface Vlanif 10
+ip address 192.168.10.254 24
+quit
+interface Vlanif 20
+ip address 192.168.20.254 24
+quit
+interface Vlanif 99
+ip address 192.168.99.254 24
+quit
+
+interface LoopBack 0
+ip address 1.1.1.1 32
+quit
+capwap source interface LoopBack 0
+
+interface range GigabitEthernet 0/0/1 GigabitEthernet 0/0/2
+port link-type trunk
+port trunk pvid vlan 99
+port trunk allow-pass vlan 10 20 99
+quit
+
+dhcp enable
+interface Vlanif 99
+dhcp select interface
+dhcp server gateway-list 192.168.99.254
+dhcp server option 43 sub-option 3 ascii 1.1.1.1
+quit
+interface Vlanif 10
+dhcp select interface
+dhcp server gateway-list 192.168.10.254
+quit
+interface Vlanif 20
+dhcp select interface
+dhcp server gateway-list 192.168.20.254
+quit
+
+wlan
+ssid-profile name guest
+ssid guest
+quit
+ssid-profile name office
+ssid office
+quit
+
+security-profile name wpa2
+security wpa2 psk pass-phrase __WLAN_PSK__ aes
+y
+quit
+
+vap-profile name guest-vap
+service-vlan vlan-id 10
+ssid-profile guest
+quit
+vap-profile name office-vap
+service-vlan vlan-id 20
+ssid-profile office
+security-profile wpa2
+quit
+
+ssid-profile name office
+ssid-hide enable
+quit
+
+sta-whitelist-profile name whitelist
+sta-mac 5489-981b-7b4a
+quit
+vap-profile name office-vap
+sta-access-mode whitelist whitelist
+quit
+
+ap-group name BGS
+vap-profile guest-vap wlan 1 radio 0
+vap-profile guest-vap wlan 1 radio 1
+vap-profile office-vap wlan 2 radio 0
+vap-profile office-vap wlan 2 radio 1
+quit
+
+ap-id 1 ap-mac 00e0-fc3e-7d80
+ap-name BGS-AP7050-1
+ap-group BGS
+quit
+ap-id 2 ap-mac 00e0-fc61-3570
+ap-name BGS-AP7050-2
+ap-group BGS
+quit
+
+quit
+save
+y
+
+================================================================
+验证命令（逐条敲，用于截图；不是配置，请勿整段粘贴）
+================================================================
+display ap all
+   → 两台 AP：State=nor，Group=BGS，Name=BGS-AP7050-1/2
+display vap all
+   → office 那行 Auth type = WPA2-PSK；guest 那行 = Open
+display ssid-profile name office
+   → SSID hide : enable
+display sta-whitelist-profile name whitelist
+   → Index 0  MAC=5489-981b-7b4a  Total:1
+display ip pool interface vlanif99 used
+   → 两条 192.168.99.x 且 Status=Used（AP 已从 VLAN99 拿地址）

@@ -1,0 +1,1439 @@
+================================================================================
+                    eNSP 完整配置命令 — 项目6
+================================================================================
+
+================================================================================
+一、A_FW1（总部防火墙 — USG6000V）
+================================================================================
+
+-------------------- 1. 基础配置 --------------------
+system-view
+sysname A_FW1
+user-interface console 0
+ idle-timeout 0
+ quit
+user-interface vty 0 4
+ idle-timeout 0
+ quit
+
+interface G1/0/0
+ ip address 119.1.1.1 255.255.255.0
+ quit
+
+interface G1/0/1
+ ip address 10.1.127.1 255.255.255.0
+ quit
+
+interface G1/0/2
+ ip address 10.1.128.1 255.255.255.0
+ quit
+
+interface G1/0/3
+ ip address 10.1.12.254 255.255.255.0
+ quit
+
+interface G1/0/4
+ ip address 10.1.121.1 255.255.255.0
+ quit
+
+-------------------- 2. 安全区域配置 --------------------
+firewall zone trust
+ add interface G1/0/1
+ add interface G1/0/2
+ add interface G1/0/3
+ quit
+
+firewall zone untrust
+ add interface G1/0/0
+ quit
+
+firewall zone dmz
+ add interface G1/0/4
+ quit
+
+-------------------- 3. 安全策略（基础） --------------------
+security-policy
+ rule name trust_to_untrust
+  source-zone trust
+  destination-zone untrust
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+security-policy
+ rule name untrust_to_trust
+  source-zone untrust
+  destination-zone trust
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+security-policy
+ rule name trust_to_dmz
+  source-zone trust
+  destination-zone dmz
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+security-policy
+ rule name dmz_to_trust
+  source-zone dmz
+  destination-zone trust
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+security-policy
+ rule name local_to_any
+  source-zone local
+  destination-zone any
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+security-policy
+ rule name any_to_local
+  source-zone any
+  destination-zone local
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+-------------------- 4. OSPF 配置（区域0，MD5认证，BFD）--------------------
+router id 1.1.1.1
+
+ospf 1
+ bfd all-interfaces enable
+ area 0
+  authentication-mode md5 1 cipher __LAB_PASSWORD__
+  network 10.1.127.0 0.0.0.255
+  network 10.1.128.0 0.0.0.255
+ quit
+ quit
+
+interface G1/0/1
+ ospf authentication-mode md5 1 cipher __LAB_PASSWORD__
+ quit
+interface G1/0/2
+ ospf authentication-mode md5 1 cipher __LAB_PASSWORD__
+ quit
+
+-------------------- 5. eBGP 与 PE1 --------------------
+bgp 65000
+ router-id 1.1.1.1
+ peer 10.1.121.2 as-number 100
+ #
+ ipv4-family unicast
+  peer 10.1.121.2 enable
+  network 10.1.0.0 255.255.0.0
+ quit
+ quit
+
+-------------------- 6. 默认路由 + NQA --------------------
+ip route-static 0.0.0.0 0.0.0.0 119.1.1.2
+
+nqa test-instance admin to_internet
+ test-type icmp
+ destination-address ipv4 151.1.4.1
+ frequency 30
+ start now
+ quit
+
+# USG6000V 若不支持 track，可跳过下面两行
+# track 1 nqa admin to_internet
+# ip route-static 0.0.0.0 0.0.0.0 119.1.1.2 track 1
+
+-------------------- 7. NAT 配置 --------------------
+nat address-group 1
+ mode pat
+ section 0 119.1.1.11 119.1.1.20
+ quit
+
+# NAT策略：总部用户访问外网
+nat-policy
+ rule name nat_outbound
+  source-zone trust
+  destination-zone untrust
+  source-address 10.1.0.0 255.255.0.0
+  destination-address any
+  action source-nat address-group 1
+ quit
+
+# 服务器映射（内网服务器用公网地址 119.1.1.100）
+nat server server_web protocol tcp global 119.1.1.100 80 inside 10.1.12.100 80
+
+-------------------- 8. IPSec VPN（与 B_FW2）--------------------
+ike proposal 1
+ encryption-algorithm 3des
+ authentication-algorithm sha1
+ dh group2
+ quit
+
+ike peer b_fw2
+ pre-shared-key cipher __LAB_PASSWORD__
+ ike-proposal 1
+ remote-address 219.1.1.1
+ quit
+
+ipsec proposal 1
+ encapsulation-mode tunnel
+ esp authentication-algorithm sha1
+ esp encryption-algorithm 3des
+ quit
+
+acl 3000
+ rule 5 permit ip source 10.1.0.0 0.0.255.255 destination 10.1.0.0 0.0.255.255
+ quit
+
+ipsec policy vpn_policy 10 isakmp
+ security acl 3000
+ ike-peer b_fw2
+ proposal 1
+ quit
+
+interface G1/0/0
+ ipsec policy vpn_policy
+ quit
+
+# 优选 MPLS VPN（BGP路由优先级更高），IPSec 作为备份
+# BGP 路由默认 AD=255(eBGP)，通过路由策略确保 MPLS VPN 优先
+
+-------------------- 9. DHCP 服务器（AP/STA 地址池）--------------------
+dhcp enable
+
+ip pool vlan10_pool
+ gateway-list 10.1.10.254
+ network 10.1.10.0 mask 255.255.255.0
+ dns-list 8.8.8.8
+ quit
+
+ip pool vlan11_pool
+ gateway-list 10.1.11.254
+ network 10.1.11.0 mask 255.255.255.0
+ quit
+
+interface G1/0/1
+ dhcp select global
+ quit
+
+-------------------- 10. OSPFv3 + 6to4 隧道 + BGP4+ --------------------
+ipv6
+
+ospfv3 1
+ router-id 1.1.1.1
+ quit
+
+interface G1/0/1
+ ipv6 enable
+ ipv6 address 2001:42::2/64
+ ipv6 address FE80::1 link-local
+ ospfv3 1 area 0
+ quit
+interface G1/0/2
+ ipv6 enable
+ ipv6 address 2001:49::2/64
+ ipv6 address FE80::2 link-local
+ ospfv3 1 area 0
+ quit
+
+# 6to4 隧道（通过 MPLS VPN 网络与 B_FW2 建立）
+interface Tunnel 1
+ ipv6 enable
+ ipv6 address 2001:100:1:1::1/64
+ tunnel-protocol ipv6-ipv4 6to4
+ source 10.1.121.1
+ quit
+
+bgp 65000
+ peer 2001:100:1:1::3 as-number 65000
+ peer 2001:100:1:1::3 connect-interface Tunnel 1
+ ipv6-family unicast
+  peer 2001:100:1:1::3 enable
+  import-route direct
+ quit
+ quit
+
+================================================================================
+二、B_FW2（分支防火墙 — USG6000V）
+================================================================================
+
+-------------------- 1. 基础配置 --------------------
+system-view
+sysname B_FW2
+user-interface console 0
+ idle-timeout 0
+ quit
+user-interface vty 0 4
+ idle-timeout 0
+ quit
+
+interface G1/0/0
+ ip address 219.1.1.1 255.255.255.0
+ quit
+
+interface G1/0/1
+ ip address 10.1.135.2 255.255.255.0
+ quit
+
+interface G1/0/2
+ ip address 10.1.133.1 255.255.255.0
+ quit
+
+-------------------- 2. 安全区域 --------------------
+firewall zone trust
+ add interface G1/0/1
+ quit
+
+firewall zone untrust
+ add interface G1/0/0
+ quit
+
+firewall zone dmz
+ add interface G1/0/2
+ quit
+
+security-policy
+ rule name trust_to_untrust
+  source-zone trust
+  destination-zone untrust
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+security-policy
+ rule name untrust_to_trust
+  source-zone untrust
+  destination-zone trust
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+security-policy
+ rule name local_to_any
+  source-zone local
+  destination-zone any
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+security-policy
+ rule name any_to_local
+  source-zone any
+  destination-zone local
+  source-address any
+  destination-address any
+  action permit
+ quit
+
+-------------------- 3. PPPoE 客户端（拨号到 ISP）--------------------
+interface Dialer 1
+ link-protocol ppp
+ ppp chap user user1
+ ppp chap password cipher __LAB_PASSWORD__
+ ip address ppp-negotiate
+ quit
+
+interface G1/0/0
+ pppoe-client dial-bundle-number 1
+ quit
+
+# Easy-IP NAT（通过 Dialer 出口）
+nat-policy
+ rule name easyip_outbound
+  source-zone trust
+  destination-zone untrust
+  source-address 10.1.0.0 255.255.0.0
+  destination-address any
+  action source-nat easy-ip
+ quit
+
+-------------------- 4. OSPF 区域0（与 B_R1）--------------------
+router id 2.2.2.2
+
+ospf 1
+ area 0
+  network 10.1.135.0 0.0.0.255
+ quit
+ quit
+
+-------------------- 5. eBGP 与 PE2 --------------------
+bgp 65000
+ router-id 2.2.2.2
+ peer 10.1.133.2 as-number 100
+ #
+ ipv4-family unicast
+  peer 10.1.133.2 enable
+  network 10.1.0.0 255.255.0.0
+ quit
+ quit
+
+-------------------- 6. IPSec VPN（与 A_FW1）--------------------
+ike proposal 1
+ encryption-algorithm 3des
+ authentication-algorithm sha1
+ dh group2
+ quit
+
+ike peer a_fw1
+ pre-shared-key cipher __LAB_PASSWORD__
+ ike-proposal 1
+ remote-address 119.1.1.1
+ quit
+
+ipsec proposal 1
+ encapsulation-mode tunnel
+ esp authentication-algorithm sha1
+ esp encryption-algorithm 3des
+ quit
+
+acl 3000
+ rule 5 permit ip source 10.1.0.0 0.0.255.255 destination 10.1.0.0 0.0.255.255
+ quit
+
+ipsec policy vpn_policy 10 isakmp
+ security acl 3000
+ ike-peer a_fw1
+ proposal 1
+ quit
+
+interface G1/0/0
+ ipsec policy vpn_policy
+ quit
+
+-------------------- 7. VLAN + IPv6 配置 --------------------
+vlan 111
+ quit
+vlan 122
+ quit
+vlan 133
+ quit
+
+interface Vlanif111
+ ipv6 enable
+ ipv6 address 2001:22::1/64
+ quit
+
+interface Vlanif122
+ ipv6 enable
+ ipv6 address 2001:200::2/64
+ quit
+
+interface Vlanif133
+ ipv6 enable
+ ipv6 address 2001:300::2/64
+ quit
+
+-------------------- 8. OSPFv3 + 6to4 隧道 + BGP4+ --------------------
+ipv6
+
+ospfv3 1
+ router-id 2.2.2.2
+ quit
+
+interface G1/0/1
+ ipv6 enable
+ ipv6 address FE80::1 link-local
+ ospfv3 1 area 0
+ quit
+
+# 6to4 隧道（到 A_FW1）
+interface Tunnel 1
+ ipv6 enable
+ ipv6 address 2001:100:1:3::3/64
+ tunnel-protocol ipv6-ipv4 6to4
+ source 10.1.133.1
+ quit
+
+bgp 65000
+ peer 2001:100:1:1::1 as-number 65000
+ peer 2001:100:1:1::1 connect-interface Tunnel 1
+ ipv6-family unicast
+  peer 2001:100:1:1::1 enable
+  import-route direct
+ quit
+ quit
+
+================================================================================
+三、A_SW1（总部核心交换机1 — S5700）
+================================================================================
+
+-------------------- 1. 基础配置 --------------------
+system-view
+sysname A_SW1
+
+-------------------- 2. VLAN 创建 --------------------
+vlan batch 10 11 20 127 254
+
+-------------------- 3. 接口 VLAN 配置 --------------------
+# 连接 A_FW1 G1/0/1
+interface G0/0/1
+ port link-type access
+ port default vlan 127
+ quit
+
+# 连接 AC1
+interface G0/0/10
+ port link-type access
+ port default vlan 11
+ quit
+
+# 连接 A_SW3（Trunk）
+interface G0/0/23
+ port link-type trunk
+ port trunk allow-pass vlan 10 11 254
+ quit
+
+# 连接 A_SW4（Trunk）
+interface G0/0/24
+ port link-type trunk
+ port trunk allow-pass vlan 20 254
+ quit
+
+-------------------- 4. 链路聚合（手动模式，与 A_SW2 G0/0/21+22）--------------------
+interface Eth-Trunk 1
+ mode manual load-balance
+ port link-type trunk
+ port trunk allow-pass vlan 10 20 254
+ quit
+
+interface G0/0/21
+ eth-trunk 1
+ quit
+interface G0/0/22
+ eth-trunk 1
+ quit
+# A_SW2 侧也做同样配置
+
+-------------------- 5. VLANIF 接口 IP --------------------
+interface Vlanif10
+ ip address 10.1.10.252 255.255.255.0
+ quit
+
+interface Vlanif11
+ ip address 10.1.11.254 255.255.255.0
+ quit
+
+interface Vlanif20
+ ip address 10.1.20.252 255.255.255.0
+ quit
+
+interface Vlanif127
+ ip address 10.1.127.2 255.255.255.0
+ quit
+
+interface Vlanif254
+ ip address 10.1.254.254 255.255.255.0
+ quit
+
+-------------------- 6. MST 配置（VLAN10/20 负载分担）--------------------
+stp region-configuration
+ region-name SiteA
+ revision-level 1
+ instance 1 vlan 10
+ instance 2 vlan 20
+ active region-configuration
+ quit
+
+stp instance 0 root primary
+stp instance 1 root primary    # A_SW1 是 VLAN10 主根
+stp instance 2 root secondary  # A_SW1 是 VLAN20 备根
+
+stp enable
+
+-------------------- 7. VRRP 配置 --------------------
+interface Vlanif10
+ vrrp vrid 10 virtual-ip 10.1.10.254
+ vrrp vrid 10 priority 120
+ vrrp vrid 10 preempt-mode timer delay 5
+ vrrp vrid 10 track interface G0/0/1 reduced 30
+ quit
+
+interface Vlanif20
+ vrrp vrid 20 virtual-ip 10.1.20.254
+ vrrp vrid 20 priority 100
+ quit
+
+interface Vlanif254
+ vrrp vrid 254 virtual-ip 10.1.254.252
+ vrrp vrid 254 priority 120
+ quit
+
+-------------------- 8. OSPF 配置（区域0 MD5 + BFD + vlink）--------------------
+router id 3.3.3.3
+
+bfd
+ quit
+
+ospf 1
+ bfd all-interfaces enable
+ area 0
+  authentication-mode md5 1 cipher __LAB_PASSWORD__
+  network 10.1.127.0 0.0.0.255
+  network 10.1.254.0 0.0.0.255
+ quit
+ area 1
+  network 10.1.11.0 0.0.0.255
+  network 10.1.10.0 0.0.0.255
+  network 10.1.20.0 0.0.0.255
+ quit
+ quit
+
+# 接口方式配置 MD5
+interface Vlanif127
+ ospf authentication-mode md5 1 cipher __LAB_PASSWORD__
+ quit
+
+interface Vlanif254
+ ospf authentication-mode md5 1 cipher __LAB_PASSWORD__
+ ospf network-type p2p
+ quit
+
+# vlink 备份（通过 VLANIF254 到 A_SW2）
+ospf 1
+ area 1
+  vlink-peer 4.4.4.4
+ quit
+ quit
+
+# VLANIF10/20 不建立 OSPF 邻居
+interface Vlanif10
+ ospf network-type p2p
+ ospf timer hello 30
+ # 不使能 OSPF: undo ospf enable (如果要禁邻居)
+ quit
+
+interface Vlanif20
+ ospf network-type p2p
+ quit
+
+-------------------- 9. SNMPv2 --------------------
+snmp-agent
+snmp-agent sys-info version v2c
+snmp-agent community read cipher public123 mib-view ViewDefault
+snmp-agent mib-view included ViewDefault iso
+
+snmp-agent trap enable
+snmp-agent trap enable feature-name ifnet
+snmp-agent target-host trap address udp-domain 10.1.12.254 params securityname public123 v2c
+
+-------------------- 10. OSPFv3 --------------------
+# 全局启用IPv6 + OSPFv3进程
+ipv6
+
+ospfv3 1
+ router-id 3.3.3.3
+ quit
+
+interface LoopBack 0
+ ipv6 enable
+ ipv6 address 2001:10:1:1::1/128
+ ospfv3 1 area 0
+ quit
+
+# 到 A_FW1 (VLANIF127 已配IPv4，此处加IPv6)
+interface Vlanif127
+ ipv6 enable
+ ipv6 address 2001:42::1/64
+ ospfv3 1 area 0
+ quit
+
+# 到 A_SW2 (VLANIF254 已配IPv4，此处加IPv6)
+interface Vlanif254
+ ipv6 enable
+ ipv6 address 2001:14::2/64
+ ospfv3 1 area 0
+ quit
+
+-------------------- 11. IPv4 转发（DHCP Relay，如果需要）--------------------
+# AP/STA 从防火墙获取 DHCP，交换机做中继
+interface Vlanif10
+ dhcp select relay
+ dhcp relay server-ip 10.1.127.1
+ quit
+
+interface Vlanif11
+ dhcp select relay
+ dhcp relay server-ip 10.1.127.1
+ quit
+
+================================================================================
+四、A_SW2（总部核心交换机2 — S5700）
+================================================================================
+
+-------------------- 1. 基础配置 --------------------
+system-view
+sysname A_SW2
+
+vlan batch 10 20 128 254
+
+-------------------- 2. 接口配置 --------------------
+# 连接 A_FW1 G1/0/2
+interface G0/0/1
+ port link-type access
+ port default vlan 128
+ quit
+
+# 连接 A_SW1（链路聚合 G0/0/21+22）
+interface Eth-Trunk 1
+ mode manual load-balance
+ port link-type trunk
+ port trunk allow-pass vlan 10 20 254
+ quit
+
+interface G0/0/21
+ eth-trunk 1
+ quit
+interface G0/0/22
+ eth-trunk 1
+ quit
+
+# 连接 A_SW3
+interface G0/0/24
+ port link-type trunk
+ port trunk allow-pass vlan 10 11 254
+ quit
+
+# 连接 A_SW4
+interface G0/0/23
+ port link-type trunk
+ port trunk allow-pass vlan 20 254
+ quit
+
+-------------------- 3. VLANIF 接口 IP --------------------
+interface Vlanif10
+ ip address 10.1.10.251 255.255.255.0
+ quit
+
+interface Vlanif20
+ ip address 10.1.20.251 255.255.255.0
+ quit
+
+interface Vlanif128
+ ip address 10.1.128.2 255.255.255.0
+ quit
+
+interface Vlanif254
+ ip address 10.1.254.253 255.255.255.0
+ quit
+
+-------------------- 4. MST 配置 --------------------
+stp region-configuration
+ region-name SiteA
+ revision-level 1
+ instance 1 vlan 10
+ instance 2 vlan 20
+ active region-configuration
+ quit
+
+stp instance 0 root secondary
+stp instance 1 root secondary   # A_SW2 是 VLAN10 备根
+stp instance 2 root primary     # A_SW2 是 VLAN20 主根
+
+stp enable
+
+-------------------- 5. VRRP 配置 --------------------
+interface Vlanif10
+ vrrp vrid 10 virtual-ip 10.1.10.254
+ vrrp vrid 10 priority 100
+ quit
+
+interface Vlanif20
+ vrrp vrid 20 virtual-ip 10.1.20.254
+ vrrp vrid 20 priority 120
+ vrrp vrid 20 preempt-mode timer delay 5
+ vrrp vrid 20 track interface G0/0/1 reduced 30
+ quit
+
+interface Vlanif254
+ vrrp vrid 254 virtual-ip 10.1.254.252
+ vrrp vrid 254 priority 100
+ quit
+
+-------------------- 6. OSPF --------------------
+router id 4.4.4.4
+
+ospf 1
+ bfd all-interfaces enable
+ area 0
+  authentication-mode md5 1 cipher __LAB_PASSWORD__
+  network 10.1.128.0 0.0.0.255
+  network 10.1.254.0 0.0.0.255
+ quit
+ area 1
+  network 10.1.10.0 0.0.0.255
+  network 10.1.20.0 0.0.0.255
+ quit
+ quit
+
+interface Vlanif128
+ ospf authentication-mode md5 1 cipher __LAB_PASSWORD__
+ quit
+
+interface Vlanif254
+ ospf authentication-mode md5 1 cipher __LAB_PASSWORD__
+ ospf network-type p2p
+ quit
+
+# vlink
+ospf 1
+ area 1
+  vlink-peer 3.3.3.3
+ quit
+ quit
+
+-------------------- 7. DHCP Relay --------------------
+dhcp enable
+interface Vlanif10
+ dhcp select relay
+ dhcp relay server-ip 10.1.128.1
+ quit
+
+-------------------- 8. OSPFv3 --------------------
+# 全局启用IPv6 + OSPFv3进程
+ipv6
+
+ospfv3 1
+ router-id 4.4.4.4
+ quit
+
+interface LoopBack 0
+ ipv6 enable
+ ipv6 address 2001:10:1:2::2/128
+ ospfv3 1 area 0
+ quit
+
+# 到 A_FW1 (VLANIF128 已配IPv4，此处加IPv6)
+interface Vlanif128
+ ipv6 enable
+ ipv6 address 2001:49::2/64
+ ospfv3 1 area 0
+ quit
+
+# 到 A_SW1 (VLANIF254 已配IPv4，此处加IPv6)
+interface Vlanif254
+ ipv6 enable
+ ipv6 address 2001:14::1/64
+ ospfv3 1 area 0
+ quit
+
+================================================================================
+五、A_SW3（接入交换机3 — 型号 S3700）
+================================================================================
+
+system-view
+sysname A_SW3
+
+vlan batch 10 11 254
+
+# 连接 PC1（VLAN10）
+interface G0/0/2
+ port link-type access
+ port default vlan 10
+ quit
+
+# 连接 AP（Trunk: PVID 11 管理 + VLAN 10 业务）
+interface G0/0/10
+ port link-type trunk
+ port trunk pvid vlan 11
+ port trunk allow-pass vlan 10 11
+ quit
+
+# 上联 A_SW1（Trunk）
+interface G0/0/23
+ port link-type trunk
+ port trunk allow-pass vlan 10 11 254
+ quit
+
+# 上联 A_SW2（Trunk）
+interface G0/0/24
+ port link-type trunk
+ port trunk allow-pass vlan 10 11 254
+ quit
+
+# DHCP Snooping + 端口安全 + 端口隔离（需求6提到B_SW1，这里也加上）
+dhcp enable
+dhcp snooping enable
+interface G0/0/2
+ dhcp snooping enable
+ port-security enable
+ port-security max-mac-num 5
+ port-security mac-address sticky
+ port-isolate enable group 1
+ quit
+
+================================================================================
+六、A_SW4（接入交换机4 — 型号 S3700）
+================================================================================
+
+system-view
+sysname A_SW4
+
+vlan batch 20 254
+
+# 接入 VLAN20 设备（PC2）
+interface G0/0/2
+ port link-type access
+ port default vlan 20
+ quit
+
+# 上联 A_SW1（Trunk VLAN 20,254）
+interface G0/0/24
+ port link-type trunk
+ port trunk allow-pass vlan 20 254
+ quit
+
+# 上联 A_SW2（Trunk VLAN 20,254）
+interface G0/0/23
+ port link-type trunk
+ port trunk allow-pass vlan 20 254
+ quit
+
+================================================================================
+七、PE1（运营商边缘路由器1 — 型号 AR2240）
+================================================================================
+
+-------------------- 1. 基础配置 --------------------
+system-view
+sysname PE1
+
+interface G0/0/0
+ ip address 10.1.121.2 255.255.255.0
+ quit
+
+interface G0/0/1
+ ip address 150.1.12.1 255.255.255.0
+ quit
+
+interface LoopBack 0
+ ip address 150.1.1.1 255.255.255.255
+ quit
+
+-------------------- 2. IS-IS Level-2 --------------------
+isis 1
+ is-level level-2
+ network-entity 49.0000.0000.0000.0001.00
+ quit
+
+interface G0/0/1
+ isis enable 1
+ isis circuit-level level-2
+ quit
+
+interface LoopBack 0
+ isis enable 1
+ quit
+
+-------------------- 3. MPLS LDP --------------------
+mpls lsr-id 150.1.1.1
+mpls
+quit
+
+mpls ldp
+ quit
+
+interface G0/0/1
+ mpls
+ mpls ldp
+ quit
+
+-------------------- 4. VPN 实例（Site A）--------------------
+ip vpn-instance SiteA
+ ipv4-family
+  route-distinguisher 100:1
+  vpn-target 100:1 export-extcommunity
+  vpn-target 100:1 import-extcommunity
+ quit
+ quit
+
+interface G0/0/0
+ ip binding vpn-instance SiteA
+ ip address 10.1.121.2 255.255.255.0
+ quit
+
+-------------------- 5. eBGP（与 A_FW1 CE）--------------------
+bgp 100
+ ipv4-family vpn-instance SiteA
+  peer 10.1.121.1 as-number 65000
+ quit
+ quit
+
+-------------------- 6. VPNv4 BGP（与 RR P）--------------------
+bgp 100
+ peer 150.1.1.2 as-number 100
+ peer 150.1.1.2 connect-interface LoopBack 0
+ #
+ ipv4-family vpnv4
+  peer 150.1.1.2 enable
+ quit
+ quit
+
+-------------------- 7. IS-ISv6（拓扑分离）--------------------
+interface G0/0/1
+ ipv6 enable
+ ipv6 address FE80::1 link-local
+ quit
+
+interface LoopBack 0
+ ipv6 enable
+ ipv6 address 2001:100:1:1::1/128
+ quit
+
+isis 1
+ ipv6 enable topology ipv6
+ quit
+
+interface G0/0/1
+ isis ipv6 enable 1
+ quit
+
+interface LoopBack 0
+ isis ipv6 enable 1
+ quit
+
+================================================================================
+八、P（运营商核心路由器 — RR — 型号 AR2240）
+================================================================================
+
+-------------------- 1. 基础配置 --------------------
+system-view
+sysname P
+
+interface G0/0/1
+ ip address 150.1.12.2 255.255.255.0
+ quit
+
+interface G0/0/2
+ ip address 150.1.23.2 255.255.255.0
+ quit
+
+interface LoopBack 0
+ ip address 150.1.1.2 255.255.255.255
+ quit
+
+-------------------- 2. IS-IS Level-2 --------------------
+isis 1
+ is-level level-2
+ network-entity 49.0000.0000.0000.0002.00
+ quit
+
+interface G0/0/1
+ isis enable 1
+ isis circuit-level level-2
+ quit
+
+interface G0/0/2
+ isis enable 1
+ isis circuit-level level-2
+ quit
+
+interface LoopBack 0
+ isis enable 1
+ quit
+
+-------------------- 3. MPLS LDP --------------------
+mpls lsr-id 150.1.1.2
+mpls
+quit
+
+mpls ldp
+ quit
+
+interface G0/0/1
+ mpls
+ mpls ldp
+ quit
+
+interface G0/0/2
+ mpls
+ mpls ldp
+ quit
+
+-------------------- 4. VPNv4 Route Reflector --------------------
+bgp 100
+ peer 150.1.1.1 as-number 100
+ peer 150.1.1.1 connect-interface LoopBack 0
+ peer 150.1.1.3 as-number 100
+ peer 150.1.1.3 connect-interface LoopBack 0
+ #
+ ipv4-family vpnv4
+  peer 150.1.1.1 enable
+  peer 150.1.1.1 reflect-client
+  peer 150.1.1.3 enable
+  peer 150.1.1.3 reflect-client
+ quit
+ quit
+
+-------------------- 5. IS-ISv6 --------------------
+interface G0/0/1
+ ipv6 enable
+ ipv6 address FE80::2 link-local
+ quit
+
+interface G0/0/2
+ ipv6 enable
+ ipv6 address FE80::2 link-local
+ quit
+
+interface LoopBack 0
+ ipv6 enable
+ ipv6 address 2001:100:1:2::2/128
+ quit
+
+isis 1
+ ipv6 enable topology ipv6
+ quit
+
+interface G0/0/1
+ isis ipv6 enable 1
+ quit
+
+interface G0/0/2
+ isis ipv6 enable 1
+ quit
+
+interface LoopBack 0
+ isis ipv6 enable 1
+ quit
+
+================================================================================
+九、PE2（运营商边缘路由器2 — 型号 AR2240）
+================================================================================
+
+-------------------- 1. 基础配置 --------------------
+system-view
+sysname PE2
+
+interface G0/0/0
+ ip address 10.1.133.2 255.255.255.0
+ quit
+
+interface G0/0/2
+ ip address 150.1.23.3 255.255.255.0
+ quit
+
+interface LoopBack 0
+ ip address 150.1.1.3 255.255.255.255
+ quit
+
+-------------------- 2. IS-IS Level-2 --------------------
+isis 1
+ is-level level-2
+ network-entity 49.0000.0000.0000.0003.00
+ quit
+
+interface G0/0/2
+ isis enable 1
+ isis circuit-level level-2
+ quit
+
+interface LoopBack 0
+ isis enable 1
+ quit
+
+-------------------- 3. MPLS LDP --------------------
+mpls lsr-id 150.1.1.3
+mpls
+quit
+
+mpls ldp
+ quit
+
+interface G0/0/2
+ mpls
+ mpls ldp
+ quit
+
+-------------------- 4. VPN 实例（Site B）--------------------
+ip vpn-instance SiteB
+ ipv4-family
+  route-distinguisher 100:2
+  vpn-target 100:1 export-extcommunity
+  vpn-target 100:1 import-extcommunity
+ quit
+ quit
+
+interface G0/0/0
+ ip binding vpn-instance SiteB
+ ip address 10.1.133.2 255.255.255.0
+ quit
+
+-------------------- 5. eBGP（与 B_FW2 CE）--------------------
+bgp 100
+ ipv4-family vpn-instance SiteB
+  peer 10.1.133.1 as-number 65000
+ quit
+ quit
+
+-------------------- 6. VPNv4 BGP --------------------
+bgp 100
+ peer 150.1.1.2 as-number 100
+ peer 150.1.1.2 connect-interface LoopBack 0
+ #
+ ipv4-family vpnv4
+  peer 150.1.1.2 enable
+ quit
+ quit
+
+-------------------- 7. IS-ISv6 --------------------
+interface G0/0/2
+ ipv6 enable
+ ipv6 address FE80::3 link-local
+ quit
+
+interface LoopBack 0
+ ipv6 enable
+ ipv6 address 2001:100:1:3::3/128
+ quit
+
+isis 1
+ ipv6 enable topology ipv6
+ quit
+
+interface G0/0/2
+ isis ipv6 enable 1
+ quit
+
+interface LoopBack 0
+ isis ipv6 enable 1
+ quit
+
+================================================================================
+十、ISP（互联网服务提供商路由器 — 型号 AR2220）
+================================================================================
+
+-------------------- 1. 基础配置 --------------------
+system-view
+sysname ISP
+
+interface G0/0/0
+ ip address 151.1.4.254 255.255.255.0
+ quit
+
+interface G0/0/1
+ ip address 119.1.1.2 255.255.255.0
+ quit
+
+interface G0/0/2
+ ip address 219.1.1.2 255.255.255.0
+ quit
+
+-------------------- 2. 静态路由 --------------------
+ip route-static 0.0.0.0 0.0.0.0 151.1.4.1
+
+-------------------- 3. PPPoE 服务端 --------------------
+undo ip pool pppoe_pool
+ip pool pppoe_pool
+ network 10.100.1.0 mask 255.255.255.0
+ quit
+
+interface Virtual-Template 1
+ ppp authentication-mode chap
+ ppp chap user user1
+ remote address pool pppoe_pool
+ ip address 10.100.1.254 255.255.255.0
+ quit
+
+interface G0/0/2
+ pppoe-server bind Virtual-Template 1
+ quit
+
+# 本地用户
+aaa
+ local-user user1 password cipher __LAB_PASSWORD__
+ local-user user1 service-type ppp
+ quit
+
+-------------------- 4. SSH 服务器 --------------------
+user-interface vty 0 4
+ authentication-mode aaa
+ protocol inbound ssh
+ quit
+
+aaa
+ local-user admin password cipher __LAB_PASSWORD__
+ local-user admin service-type ssh
+ local-user admin privilege level 15
+ quit
+
+ssh user admin authentication-type password
+stelnet server enable
+
+-------------------- 5. 公网客户端路由 --------------------
+# 151.1.4.1 是公网客户端所在网络
+
+================================================================================
+十一、B_R1（分支路由器 — 型号 AR2220）
+================================================================================
+
+-------------------- 1. 路由模式（注意是路由器，非交换机）--------------------
+system-view
+sysname B_R1
+
+interface G0/0/0
+ ip address 10.1.30.254 255.255.255.0
+ quit
+
+interface G0/0/1
+ ip address 10.1.135.1 255.255.255.0
+ quit
+
+-------------------- 2. OSPF 区域0（与 B_FW2）--------------------
+router id 5.5.5.5
+
+ospf 1
+ area 0
+  network 10.1.135.0 0.0.0.255
+  network 10.1.30.0 0.0.0.255
+ quit
+ quit
+
+-------------------- 3. DHCP 服务器（PC3、PC4）--------------------
+dhcp enable
+
+ip pool pc_pool
+ gateway-list 10.1.30.254
+ network 10.1.30.0 mask 255.255.255.0
+ dns-list 8.8.8.8
+ quit
+
+interface G0/0/0
+ dhcp select global
+ quit
+
+-------------------- 4. OSPFv3 --------------------
+ipv6
+
+ospfv3 1
+ router-id 5.5.5.5
+ quit
+
+interface G0/0/1
+ ipv6 enable
+ ipv6 address FE80::1 link-local
+ ospfv3 1 area 0
+ quit
+
+# 有状态 IPv6 地址分配 + DNS (2001:10:1:9::9)
+dhcpv6 pool v6_pool
+ address prefix 2001:10:1:9::/64
+ dns-server 2001:10:1:9::9
+ quit
+
+interface G0/0/0
+ ipv6 enable
+ ipv6 address 2001:10:1:9::254/64
+ undo ipv6 nd ra halt
+ dhcpv6 server v6_pool
+ quit
+
+================================================================================
+十二、AC1（无线控制器 — 型号 AC6005）
+================================================================================
+
+system-view
+sysname AC1
+
+vlan batch 11
+
+# 连接 A_SW1 G0/0/10
+interface G0/0/1
+ port link-type trunk
+ port trunk allow-pass vlan 11
+ quit
+
+interface Vlanif11
+ ip address 10.1.11.1 255.255.255.0
+ quit
+
+# AP 上线的 CAPWAP 配置
+capwap source interface Vlanif11
+
+# WLAN 服务配置
+wlan
+ ssid-profile name HUAWEI
+  ssid HUAWEI
+ quit
+
+ security-profile name huawei_sec
+  security wpa2 psk pass-phrase __LAB_PASSWORD__ aes
+ quit
+
+ vap-profile name huawei_vap
+  forward-mode direct-forward
+  service-vlan vlan-id 10
+  ssid-profile HUAWEI
+  security-profile huawei_sec
+ quit
+
+# 绑定到 AP 组
+ap-group name default
+ vap-profile huawei_vap wlan 1 radio all
+ quit
+
+# 查看 AP 状态
+display ap all
+
+# 确认 AP 上线并绑定射频
+ap-confirm all
+
+ap-id 0
+ vap-profile huawei_vap wlan 1 radio 0
+ vap-profile huawei_vap wlan 1 radio 1
+ quit
+quit
+
+================================================================================
+十三、B_SW1（分支交换机 — 型号 S3700）
+================================================================================
+
+system-view
+sysname B_SW1
+
+vlan batch 30
+
+# 所有接口位于 VLAN30（S3700 用 port-group）
+port-group 1
+ group-member G0/0/1 to G0/0/24
+ port link-type access
+ port default vlan 30
+ quit
+
+# DHCP Snooping
+dhcp enable
+dhcp snooping enable
+
+port-group 2
+group-member G0/0/1 to G0/0/24
+dhcp snooping enable
+quit
+
+# 端口安全 + 端口隔离（PC3、PC4 不能互访）
+# 连接 PC3
+interface G0/0/2
+ port-security enable
+ port-security max-mac-num 1
+ port-security mac-address sticky
+ port-isolate enable group 1
+ quit
+
+# 连接 PC4
+interface G0/0/3
+ port-security enable
+ port-security max-mac-num 1
+ port-security mac-address sticky
+ port-isolate enable group 1
+ quit
+
+================================================================================
+配置完毕
+================================================================================

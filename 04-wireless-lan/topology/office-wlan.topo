@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UNICODE" ?>
+<topo version="1.3.00.100">
+    <devices>
+        <dev id="944C13A3-8450-477f-9D9F-F250976EA5F4" name="AP4" poe="0" model="AP7050" settings=" -apMac 00-E0-FC-3E-7D-80 -apSN 2102354483104154A61F" system_mac="00-E0-FC-3E-7D-80" com_port="2001" bootmode="0" cx="354.000000" cy="373.000000" edit_left="381" edit_top="427">
+            <slot number="slot17" isMainBoard="1">
+                <interface sztype="Ethernet" interfacename="GE" count="2" />
+            </slot>
+        </dev>
+        <dev id="22D14744-CA4E-419c-B132-50080F895784" name="AP5" poe="0" model="AP7050" settings=" -apMac 00-E0-FC-61-35-70 -apSN 2102354483107174E36D" system_mac="00-E0-FC-61-35-70" com_port="2002" bootmode="0" cx="660.000000" cy="378.000000" edit_left="687" edit_top="432">
+            <slot number="slot17" isMainBoard="1">
+                <interface sztype="Ethernet" interfacename="GE" count="2" />
+            </slot>
+        </dev>
+        <dev id="8EDAA8F5-00EB-403a-A1AB-72F002A710E9" name="AC4" poe="0" model="AC6005" settings="" system_mac="00-E0-FC-18-2E-AD" com_port="2000" bootmode="0" cx="515.000000" cy="101.000000" edit_left="542" edit_top="155">
+            <slot number="slot17" isMainBoard="1">
+                <interface sztype="Ethernet" interfacename="GE" count="8" />
+            </slot>
+        </dev>
+    </devices>
+    <lines>
+        <line srcDeviceID="944C13A3-8450-477f-9D9F-F250976EA5F4" destDeviceID="8EDAA8F5-00EB-403a-A1AB-72F002A710E9">
+            <interfacePair lineName="Copper" srcIndex="0" srcBoundRectIsMoved="0" srcBoundRect_X="402.996460" srcBoundRect_Y="362.838287" srcOffset_X="0.000000" srcOffset_Y="0.000000" tarIndex="0" tarBoundRectIsMoved="1" tarBoundRect_X="520.003540" tarBoundRect_Y="165.161713" tarOffset_X="-82.000000" tarOffset_Y="-12.000000" />
+        </line>
+        <line srcDeviceID="8EDAA8F5-00EB-403a-A1AB-72F002A710E9" destDeviceID="22D14744-CA4E-419c-B132-50080F895784">
+            <interfacePair lineName="Copper" srcIndex="1" srcBoundRectIsMoved="0" srcBoundRect_X="562.027222" srcBoundRect_Y="166.258942" srcOffset_X="0.000000" srcOffset_Y="0.000000" tarIndex="0" tarBoundRectIsMoved="0" tarBoundRect_X="666.972778" tarBoundRect_Y="366.741058" tarOffset_X="0.000000" tarOffset_Y="0.000000" />
+        </line>
+    </lines>
+    <shapes />
+    <txttips />
+</topo>

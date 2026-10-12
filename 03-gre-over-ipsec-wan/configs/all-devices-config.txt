@@ -1,0 +1,314 @@
+================================================================
+GRE over IPsec 安全广域互联 —— 各设备完整配置
+拓扑：AR1(总部)  Hub，AR2(上海)/AR3(广州) Spoke，AR4/5/6 模拟 ISP
+封装顺序：先 GRE 封装，再 IPsec(ESP 传输模式) 保护 GRE(协议号47)
+================================================================
+
+########################### AR1 北京总部 ###########################
+system-view
+sysname AR1-HQ
+
+# ---- 基础接口 ----
+interface GigabitEthernet0/0/0
+ ip address 192.168.10.1 255.255.255.0
+ quit
+interface GigabitEthernet0/0/1
+ ip address 203.0.113.1 255.255.255.252
+ quit
+
+# ---- 默认路由指向 ISP ----
+ip route-static 0.0.0.0 0.0.0.0 203.0.113.2
+
+# ---- GRE 隧道（上海 / 广州）----
+interface Tunnel0/0/0
+ ip address 10.255.12.1 255.255.255.252
+ tunnel-protocol gre
+ source 203.0.113.1
+ destination 198.51.100.1
+ gre key 120
+ quit
+interface Tunnel0/0/1
+ ip address 10.255.13.1 255.255.255.252
+ tunnel-protocol gre
+ source 203.0.113.1
+ destination 192.0.2.1
+ gre key 130
+ quit
+
+# ---- 企业 OSPF（跑在 GRE 上）----
+ospf 1 router-id 1.1.1.1
+ area 0.0.0.0
+  network 192.168.10.0 0.0.0.255
+  network 10.255.12.0 0.0.0.3
+  network 10.255.13.0 0.0.0.3
+ quit
+
+# ---- IPsec：ACL 只匹配 GRE 流量 ----
+acl number 3100
+ rule 5 permit gre source 203.0.113.1 0 destination 198.51.100.1 0
+ quit
+acl number 3101
+ rule 5 permit gre source 203.0.113.1 0 destination 192.0.2.1 0
+ quit
+
+ipsec proposal GRE-TRANS
+ encapsulation-mode transport
+ esp authentication-algorithm sha1
+ esp encryption-algorithm aes-128
+ quit
+
+ike proposal 10
+ authentication-method pre-share
+ authentication-algorithm sha1
+ encryption-algorithm aes-cbc-128
+ dh group2
+ quit
+
+ike peer SH v1
+ pre-shared-key simple __PSK_SH__
+ ike-proposal 10
+ remote-address 198.51.100.1
+ quit
+ike peer GZ v1
+ pre-shared-key simple __PSK_GZ__
+ ike-proposal 10
+ remote-address 192.0.2.1
+ quit
+
+ipsec policy GRE-IPSEC 10 isakmp
+ security acl 3100
+ ike-peer SH
+ proposal GRE-TRANS
+ quit
+ipsec policy GRE-IPSEC 20 isakmp
+ security acl 3101
+ ike-peer GZ
+ proposal GRE-TRANS
+ quit
+
+# ---- 应用到公网接口 ----
+interface GigabitEthernet0/0/1
+ ipsec policy GRE-IPSEC
+ quit
+
+return
+save
+y
+
+
+########################### AR2 上海分支 ###########################
+system-view
+sysname AR2-SH
+
+interface GigabitEthernet0/0/0
+ ip address 192.168.20.1 255.255.255.0
+ quit
+interface GigabitEthernet0/0/1
+ ip address 198.51.100.1 255.255.255.252
+ quit
+
+ip route-static 0.0.0.0 0.0.0.0 198.51.100.2
+
+interface Tunnel0/0/0
+ ip address 10.255.12.2 255.255.255.252
+ tunnel-protocol gre
+ source 198.51.100.1
+ destination 203.0.113.1
+ gre key 120
+ quit
+
+ospf 1 router-id 2.2.2.2
+ area 0.0.0.0
+  network 192.168.20.0 0.0.0.255
+  network 10.255.12.0 0.0.0.3
+ quit
+
+acl number 3100
+ rule 5 permit gre source 198.51.100.1 0 destination 203.0.113.1 0
+ quit
+
+ipsec proposal GRE-TRANS
+ encapsulation-mode transport
+ esp authentication-algorithm sha1
+ esp encryption-algorithm aes-128
+ quit
+
+ike proposal 10
+ authentication-method pre-share
+ authentication-algorithm sha1
+ encryption-algorithm aes-cbc-128
+ dh group2
+ quit
+
+ike peer HQ v1
+ pre-shared-key simple __PSK_SH__
+ ike-proposal 10
+ remote-address 203.0.113.1
+ quit
+
+ipsec policy GRE-IPSEC 10 isakmp
+ security acl 3100
+ ike-peer HQ
+ proposal GRE-TRANS
+ quit
+
+interface GigabitEthernet0/0/1
+ ipsec policy GRE-IPSEC
+ quit
+
+return
+save
+y
+
+
+########################### AR3 广州分支 ###########################
+system-view
+sysname AR3-GZ
+
+interface GigabitEthernet0/0/0
+ ip address 192.168.30.1 255.255.255.0
+ quit
+interface GigabitEthernet0/0/1
+ ip address 192.0.2.1 255.255.255.252
+ quit
+
+ip route-static 0.0.0.0 0.0.0.0 192.0.2.2
+
+interface Tunnel0/0/0
+ ip address 10.255.13.2 255.255.255.252
+ tunnel-protocol gre
+ source 192.0.2.1
+ destination 203.0.113.1
+ gre key 130
+ quit
+
+ospf 1 router-id 3.3.3.3
+ area 0.0.0.0
+  network 192.168.30.0 0.0.0.255
+  network 10.255.13.0 0.0.0.3
+ quit
+
+acl number 3100
+ rule 5 permit gre source 192.0.2.1 0 destination 203.0.113.1 0
+ quit
+
+ipsec proposal GRE-TRANS
+ encapsulation-mode transport
+ esp authentication-algorithm sha1
+ esp encryption-algorithm aes-128
+ quit
+
+ike proposal 10
+ authentication-method pre-share
+ authentication-algorithm sha1
+ encryption-algorithm aes-cbc-128
+ dh group2
+ quit
+
+ike peer HQ v1
+ pre-shared-key simple __PSK_GZ__
+ ike-proposal 10
+ remote-address 203.0.113.1
+ quit
+
+ipsec policy GRE-IPSEC 10 isakmp
+ security acl 3100
+ ike-peer HQ
+ proposal GRE-TRANS
+ quit
+
+interface GigabitEthernet0/0/1
+ ipsec policy GRE-IPSEC
+ quit
+
+return
+save
+y
+
+
+########################### AR4 ISP-A（总部侧接入）###########################
+system-view
+sysname AR4-ISP-A
+
+interface GigabitEthernet0/0/0
+ ip address 203.0.113.2 255.255.255.252
+ quit
+interface GigabitEthernet0/0/1
+ ip address 10.0.45.1 255.255.255.252
+ quit
+
+ospf 100 router-id 4.4.4.4
+ area 0.0.0.0
+  network 203.0.113.0 0.0.0.3
+  network 10.0.45.0 0.0.0.3
+ quit
+
+return
+save
+y
+
+
+########################### AR5 ISP-Core ###########################
+system-view
+sysname AR5-CORE
+
+interface GigabitEthernet0/0/0
+ ip address 10.0.45.2 255.255.255.252
+ quit
+interface GigabitEthernet0/0/1
+ ip address 10.0.56.1 255.255.255.252
+ quit
+
+ospf 100 router-id 5.5.5.5
+ area 0.0.0.0
+  network 10.0.45.0 0.0.0.3
+  network 10.0.56.0 0.0.0.3
+ quit
+
+return
+save
+y
+
+
+########################### AR6 ISP-B（分支侧接入）###########################
+system-view
+sysname AR6-ISP-B
+
+interface GigabitEthernet0/0/0
+ ip address 10.0.56.2 255.255.255.252
+ quit
+interface GigabitEthernet0/0/1
+ ip address 198.51.100.2 255.255.255.252
+ quit
+interface GigabitEthernet0/0/2
+ ip address 192.0.2.2 255.255.255.252
+ quit
+
+ospf 100 router-id 6.6.6.6
+ area 0.0.0.0
+  network 10.0.56.0 0.0.0.3
+  network 198.51.100.0 0.0.0.3
+  network 192.0.2.0 0.0.0.3
+ quit
+
+return
+save
+y
+
+
+########################### 三台 PC 地址 ###########################
+PC-HQ : 192.168.10.10 /24   GW 192.168.10.1
+PC-SH : 192.168.20.10 /24   GW 192.168.20.1
+PC-GZ : 192.168.30.10 /24   GW 192.168.30.1
+
+
+================================================================
+验证命令（分层检查，逐层通过再往上）
+================================================================
+# 1) Underlay：AR1 ping 198.51.100.1 和 192.0.2.1 应通
+# 2) GRE：AR1 ping 10.255.12.2、10.255.13.2
+# 3) OSPF：display ospf peer brief（AR1 应有 2 个 Full 邻居）
+# 4) 企业路由：display ip routing-table protocol ospf
+# 5) IPsec：display ike sa / display ipsec sa / display ipsec policy
+# 6) 业务：PC-HQ ping 192.168.20.10、192.168.30.10
+# 7) 抓包对比：部署前 gre(47)，部署后 esp(50)

@@ -1,0 +1,21 @@
+# 大文件 / 二进制（安装包、镜像、压缩包）
+*.exe
+*.msi
+*.iso
+*.vmdk
+*.ova
+*.zip
+*.rar
+*.tar.gz
+*.7z
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 临时文件
+*.log
+*.tmp
+*~
+~$*

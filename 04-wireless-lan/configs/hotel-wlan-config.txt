@@ -1,0 +1,221 @@
+酒店智能无线网络部署 完整配置命令
+
+一、交换机 L2SW（S5700）全部配置命令
+system-view
+sysname L2SW
+# 远程管理配置
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin password simple __LAB_PASSWORD__
+local-user admin service-type telnet
+local-user admin privilege level 15
+quit
+
+# 创建VLAN
+vlan 10
+description User-Wifi-1F
+quit
+vlan 20
+description User-Wifi-2F
+quit
+vlan 30
+description User-Wire
+quit
+vlan 99
+description AP-Guanli
+quit
+vlan 100
+description SW-Guanli
+quit
+
+# 配置交换机管理VLANIF100
+interface Vlanif 100
+ip address 192.168.100.1 24
+quit
+
+# 端口配置：连接AP的G0/0/1 G0/0/2
+port-group group-member GigabitEthernet 0/0/1 GigabitEthernet 0/0/2
+port link-type trunk
+port trunk pvid vlan 99
+port trunk allow-pass vlan 10 20 30 99
+quit
+
+# 连接AC端口 G0/0/24
+interface GigabitEthernet 0/0/24
+port link-type trunk
+port trunk allow-pass vlan 10 20 30 99 100
+quit
+
+# 默认静态路由
+ip route-static 0.0.0.0 0.0.0.0 192.168.100.254
+
+# 验证查看命令
+display port vlan
+display ip interface brief
+
+
+
+
+
+
+二、AC控制器 AC6005 全部配置命令
+system-view
+sysname AC
+
+# 远程管理配置
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin password simple __LAB_PASSWORD__
+local-user admin service-type telnet
+local-user admin privilege level 15
+quit
+
+# 创建VLAN
+vlan 10
+name User-Wifi-1F
+quit
+vlan 20
+name User-Wifi-2F
+quit
+vlan 30
+name User-Wire
+quit
+vlan 99
+name AP-Guanli
+quit
+vlan 100
+name SW-Guanli
+quit
+
+# 配置各VLANIF网关地址
+interface Vlanif 10
+ip address 192.168.10.254 24
+quit
+interface Vlanif 20
+ip address 192.168.20.254 24
+quit
+interface Vlanif 30
+ip address 192.168.30.254 24
+quit
+interface Vlanif 99
+ip address 192.168.99.254 24
+quit
+interface Vlanif 100
+ip address 192.168.100.254 24
+quit
+
+# LoopBack0 作为CAPWAP源接口
+interface LoopBack 0
+ip address 1.1.1.1 32
+quit
+capwap source interface LoopBack 0
+
+# DHCP全局开启
+dhcp enable
+
+# Vlanif99（AP管理地址池）
+interface Vlanif 99
+dhcp select interface
+dhcp server gateway-list 192.168.99.254
+dhcp server option 43 sub-option 3 ascii 1.1.1.1
+quit
+
+# Vlanif10（1楼无线用户地址池）
+interface Vlanif 10
+dhcp select interface
+dhcp server gateway-list 192.168.10.254
+quit
+
+# Vlanif20（2楼无线用户地址池）
+interface Vlanif 20
+dhcp select interface
+dhcp server gateway-list 192.168.20.254
+quit
+
+# Vlanif30（有线用户地址池）
+interface Vlanif 30
+dhcp select interface
+dhcp server gateway-list 192.168.30.254
+quit
+
+# AC连接交换机端口G0/0/1配置Trunk
+interface GigabitEthernet 0/0/1
+port link-type trunk
+port trunk allow-pass vlan 10 20 30 99 100
+quit
+
+# WLAN业务配置
+wlan
+# SSID配置文件
+ssid-profile name Huawei
+ssid Huawei
+quit
+
+# VAP配置文件 1F‑vap
+vap-profile name 1F-vap
+forward-mode tunnel
+service-vlan vlan-id 10
+ssid-profile Huawei
+quit
+
+# VAP配置文件 2F‑vap
+vap-profile name 2F-vap
+forward-mode tunnel
+service-vlan vlan-id 20
+ssid-profile Huawei
+quit
+
+# AP有线端口配置文件
+wired-port-profile name Wire
+mode endpoint
+vlan untagged 30
+vlan pvid 30
+quit
+
+# AP‑group 1F
+ap-group name 1F
+vap-profile 1F-vap wlan 1 radio 0
+wired-port-profile wire gigabitethernet 1
+quit
+
+# AP‑group 2F
+ap-group name 2F
+vap-profile 2F-vap wlan 1 radio 0
+wired-port-profile wire gigabitethernet 1
+quit
+
+# 注册AP（填写实际AP的MAC地址）
+# 要找到真实的ap1 mac地址
+ap-id 1 ap-mac c4b12-b469-3b4c
+ap-name 1F-AP5030-1
+ap-group 1F
+quit
+
+# 要找到真实的ap2 mac地址
+ap-id 2 ap-mac c4b12-b469-3de0
+ap-name 2F-AP5030-2
+ap-group 2F
+quit
+
+# 重启全部AP使之配置生效
+ap-reset all
+quit
+
+save
+
+# AC验证查看命令
+display ip interface brief
+display port vlan
+display ip pool interface vlanif99 used
+display vap-profile all
+display ap all
+
+# AC查看漫游
+display station roam-track sta-mac 5489-987E-2115
+
