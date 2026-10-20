@@ -1,0 +1,102 @@
+system-view
+sysname AC2
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin service-type telnet
+local-user admin privilege level 15
+local-user admin password irreversible-cipher __TELNET_PASSWORD__
+quit
+vlan 10
+description User-Wifi
+quit
+vlan 99
+description AP-Guanli
+quit
+vlan 100
+description Link--AC-vlan100--
+quit
+interface vlanif 99
+ip address 192.168.99.2 24
+quit
+interface vlanif 100
+ip address 192.168.100.2 24
+quit
+capwap source interface vlanif 99
+interface GigabitEthernet 0/0/1
+port link-type trunk
+port trunk allow-pass vlan 10 99 100
+quit
+ip route-static 0.0.0.0 0 192.168.100.11
+wlan
+rrm-profile name Warehouse-rrm
+calibrate auto-channel-select disable
+calibrate auto-txpower-select disable
+quit
+radio-2g-profile name Warehouse-2g
+rrm-profile Warehouse-rrm
+dot11bg supported-rate 6 9 11
+quit
+radio-5g-profile name Warehouse-5g
+rrm-profile Warehouse-rrm
+dot11a supported-rate 12 18
+quit
+traffic-profile name Warehouse-traffic
+rate-limit client down 8000
+rate-limit client up 8000
+quit
+ssid-profile name Warehouse
+ssid Warehouse
+quit
+vap-profile name vap
+forward-mode tunnel
+service-vlan vlan-id 10
+ssid-profile Warehouse
+traffic-profile Warehouse-traffic
+quit
+ap-group name GX
+vap-profile vap wlan 1 radio 0
+vap-profile vap wlan 1 radio 1
+radio-2g-profile Warehouse-2g radio 0
+radio-5g-profile Warehouse-5g radio 1
+quit
+ap-id 1 ap-mac c4b8-b469-3a40
+ap-name GX-AP7050DN-1
+ap-group GX
+quit
+ap-id 2 ap-mac c4b8-b469-33e0
+ap-name GX-AP7050DN-2
+ap-group GX
+quit
+ap-id 1
+radio 0
+channel 40mhz-minus 1
+eirp 20
+quit
+radio 1
+channel 80mhz 36
+eirp 20
+quit
+quit
+ap-id 2
+radio 0
+channel 40mhz-minus 11
+eirp 20
+quit
+radio 1
+channel 80mhz 52
+eirp 20
+quit
+quit
+ac protect enable
+ac protect protect-ac 192.168.99.1 priority 1
+quit
+hsb-service 0
+service-ip-port local-ip 192.168.100.2 peer-ip 192.168.100.1 local-data-port 10241 peer-data-port 10241
+quit
+hsb-service-type ap hsb-service 0
+hsb-service-type access-user hsb-service 0
+quit
+save

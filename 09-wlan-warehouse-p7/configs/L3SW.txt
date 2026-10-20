@@ -1,0 +1,55 @@
+system-view
+sysname L3SW
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin password simple __TELNET_PASSWORD__
+local-user admin service-type telnet
+local-user admin privilege level 15
+quit
+vlan 10
+description User-Wifi
+quit
+vlan 99
+description AP-Guanli
+quit
+vlan 200
+description SW-Guanli
+quit
+vlan 100
+description Link--AC-vlan100--
+quit
+interface vlanif 10
+ip address 192.168.10.254 24
+quit
+interface vlanif 99
+ip address 192.168.99.254 24
+quit
+interface vlanif 200
+ip address 192.168.200.254 24
+quit
+interface vlanif 100
+ip address 192.168.100.11 24
+quit
+dhcp enable
+interface vlanif 10
+dhcp select interface
+quit
+interface vlanif 99
+dhcp select interface
+quit
+interface GigabitEthernet 0/0/1
+port link-type trunk
+port trunk allow-pass vlan 10 99 200
+quit
+port-group group-member GigabitEthernet 0/0/23 to GigabitEthernet 0/0/24
+port link-type trunk
+port trunk allow-pass vlan 10 99 100
+quit
+ip route-static 0.0.0.0 0 192.168.200.2
+ip route-static 0.0.0.0 0 192.168.100.1
+ip route-static 0.0.0.0 0 192.168.100.2
+quit
+save

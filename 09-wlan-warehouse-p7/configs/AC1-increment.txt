@@ -1,0 +1,51 @@
+system-view
+wlan
+rrm-profile name Warehouse-rrm
+calibrate auto-channel-select disable
+calibrate auto-txpower-select disable
+quit
+radio-2g-profile name Warehouse-2g
+rrm-profile Warehouse-rrm
+dot11bg supported-rate 6 9 11
+quit
+radio-5g-profile name Warehouse-5g
+rrm-profile Warehouse-rrm
+dot11a supported-rate 12 18
+quit
+traffic-profile name Warehouse-traffic
+rate-limit client down 8000
+rate-limit client up 8000
+quit
+ssid-profile name Warehouse
+ssid Warehouse
+quit
+vap-profile name vap
+ssid-profile Warehouse
+traffic-profile Warehouse-traffic
+quit
+ap-group name GX
+radio-2g-profile Warehouse-2g radio 0
+radio-5g-profile Warehouse-5g radio 1
+quit
+ap-id 1
+radio 0
+channel 40mhz-minus 1
+eirp 20
+quit
+radio 1
+channel 80mhz 36
+eirp 20
+quit
+quit
+ap-id 2
+radio 0
+channel 40mhz-minus 11
+eirp 20
+quit
+radio 1
+channel 80mhz 52
+eirp 20
+quit
+quit
+quit
+save

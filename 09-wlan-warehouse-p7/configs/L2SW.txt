@@ -1,0 +1,35 @@
+system-view
+sysname L2SW
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin password simple __TELNET_PASSWORD__
+local-user admin service-type telnet
+local-user admin privilege level 15
+quit
+vlan 10
+description User-Wifi
+quit
+vlan 99
+description AP-Guanli
+quit
+vlan 200
+description SW-Guanli
+quit
+interface vlanif 200
+ip address 192.168.200.2 24
+quit
+port-group group-member GigabitEthernet 0/0/1 to GigabitEthernet 0/0/2
+port link-type trunk
+port trunk pvid vlan 99
+port trunk allow-pass vlan 10 99
+quit
+interface GigabitEthernet 0/0/24
+port link-type trunk
+port trunk allow-pass vlan 10 99 200
+quit
+ip route-static 0.0.0.0 0 192.168.200.254
+quit
+save

@@ -1,0 +1,511 @@
+================================================================================
+项目07：仓储中心无线网络的性能优化 —— 全部设备完整配置命令
+（在项目06 医院高可用无线网络拓扑基础上优化；本文件可直接从空配置搭起）
+================================================================================
+
+【拓扑与连线】（与项目6一致，不要改端口）
+
+  AP1 GX-AP7050DN-1 (G0/0/0) ── L2SW G0/0/1
+  AP2 GX-AP7050DN-2 (G0/0/0) ── L2SW G0/0/2
+  L2SW G0/0/24 (trunk)       ── L3SW G0/0/1  (trunk)
+  L3SW G0/0/24 (trunk)       ── AC1  G0/0/1  (trunk)
+  L3SW G0/0/23 (trunk)       ── AC2  G0/0/1  (trunk)
+
+【VLAN / IP 规划】
+
+  VLAN 10  User-Wifi     192.168.10.0/24   无线用户网段（SSID: Warehouse）
+  VLAN 99  AP-Guanli     192.168.99.0/24   AP 管理网段（CAPWAP 源）
+  VLAN 200 SW-Guanli     192.168.200.0/24  L2SW 管理网段
+  VLAN 100 Link-AC       192.168.100.0/24  L3SW 与 AC 的互联段（HSB 主备通道）
+
+  AC1   Vlanif99 192.168.99.1/24    Vlanif100 192.168.100.1/24
+  AC2   Vlanif99 192.168.99.2/24    Vlanif100 192.168.100.2/24
+  L3SW  Vlanif10 .10.254  Vlanif99 .99.254  Vlanif200 .200.254  Vlanif100 .100.11
+  L2SW  Vlanif200 192.168.200.2/24
+  AP 管理地址由 L3SW 的 Vlanif99 地址池下发（约 .252/.253）
+
+【项目7 业务规划（来自 PPT 表7-3～表7-8）】
+
+  VAP：vap    VLAN 10    SSID Warehouse    不加密、广播    流量模板 Warehouse-traffic
+  AP组：GX    radio 0 引用 Warehouse-2g，radio 1 引用 Warehouse-5g
+  AP1：2.4G 信道1/40MHz，5G 信道36/80MHz，功率20dBm
+  AP2：2.4G 信道11/40MHz，5G 信道52/80MHz，功率20dBm
+  射频模板：Warehouse-2g 支持速率 6 9 11；Warehouse-5g 支持速率 12 18
+  RRM模板：Warehouse-rrm 关闭信道自动调优、关闭功率自动调优
+  流量模板：Warehouse-traffic 上/下行各 8000 kbit/s
+  高可用：AC1 主（priority 0）、AC2 备（priority 1），ac protect + HSB 保持项目6配置
+
+【设备登录】
+
+  设备管理：admin / __TELNET_PASSWORD__（telnet）
+  AC1：192.168.99.1    AC2：192.168.99.2    L2SW：192.168.200.2    L3SW：192.168.200.254
+
+  ★ 本文件中的 AP MAC（c4b8-b469-3a40 / c4b8-b469-33e0）取自 PPT 规划表；
+    eNSP 每次新建/重启 AP 的 MAC 可能变化，粘贴前务必替换为实际 MAC（方法见文末避坑第1条）。
+
+################################################################################
+一、L2SW（接入交换机 S5700）—— 项目6基础配置，项目7无需改动
+################################################################################
+system-view
+sysname L2SW
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin password simple __TELNET_PASSWORD__
+local-user admin service-type telnet
+local-user admin privilege level 15
+quit
+vlan 10
+description User-Wifi
+quit
+vlan 99
+description AP-Guanli
+quit
+vlan 200
+description SW-Guanli
+quit
+interface vlanif 200
+ip address 192.168.200.2 24
+quit
+port-group group-member GigabitEthernet 0/0/1 to GigabitEthernet 0/0/2
+port link-type trunk
+port trunk pvid vlan 99
+port trunk allow-pass vlan 10 99
+quit
+interface GigabitEthernet 0/0/24
+port link-type trunk
+port trunk allow-pass vlan 10 99 200
+quit
+ip route-static 0.0.0.0 0 192.168.200.254
+quit
+save
+
+################################################################################
+二、L3SW（核心交换机 S5700）—— 项目6基础配置，项目7无需改动
+################################################################################
+system-view
+sysname L3SW
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin password simple __TELNET_PASSWORD__
+local-user admin service-type telnet
+local-user admin privilege level 15
+quit
+vlan 10
+description User-Wifi
+quit
+vlan 99
+description AP-Guanli
+quit
+vlan 200
+description SW-Guanli
+quit
+vlan 100
+description Link--AC-vlan100--
+quit
+interface vlanif 10
+ip address 192.168.10.254 24
+quit
+interface vlanif 99
+ip address 192.168.99.254 24
+quit
+interface vlanif 200
+ip address 192.168.200.254 24
+quit
+interface vlanif 100
+ip address 192.168.100.11 24
+quit
+dhcp enable
+interface vlanif 10
+dhcp select interface
+quit
+interface vlanif 99
+dhcp select interface
+quit
+interface GigabitEthernet 0/0/1
+port link-type trunk
+port trunk allow-pass vlan 10 99 200
+quit
+port-group group-member GigabitEthernet 0/0/23 to GigabitEthernet 0/0/24
+port link-type trunk
+port trunk allow-pass vlan 10 99 100
+quit
+ip route-static 0.0.0.0 0 192.168.200.2
+ip route-static 0.0.0.0 0 192.168.100.1
+ip route-static 0.0.0.0 0 192.168.100.2
+quit
+save
+
+################################################################################
+三、AC1（主 AC，AC6005）—— 项目6基础配置 + 项目7四项优化
+################################################################################
+system-view
+sysname AC1
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin service-type telnet
+local-user admin privilege level 15
+local-user admin password irreversible-cipher __TELNET_PASSWORD__
+quit
+vlan 10
+description User-Wifi
+quit
+vlan 99
+description AP-Guanli
+quit
+vlan 100
+description Link--AC-vlan100--
+quit
+interface vlanif 99
+ip address 192.168.99.1 24
+quit
+interface vlanif 100
+ip address 192.168.100.1 24
+quit
+capwap source interface vlanif 99
+interface GigabitEthernet 0/0/1
+port link-type trunk
+port trunk allow-pass vlan 10 99 100
+quit
+ip route-static 0.0.0.0 0 192.168.100.11
+wlan
+rrm-profile name Warehouse-rrm
+calibrate auto-channel-select disable
+calibrate auto-txpower-select disable
+quit
+radio-2g-profile name Warehouse-2g
+rrm-profile Warehouse-rrm
+dot11bg supported-rate 6 9 11
+quit
+radio-5g-profile name Warehouse-5g
+rrm-profile Warehouse-rrm
+dot11a supported-rate 12 18
+quit
+traffic-profile name Warehouse-traffic
+rate-limit client down 8000
+rate-limit client up 8000
+quit
+ssid-profile name Warehouse
+ssid Warehouse
+quit
+vap-profile name vap
+forward-mode tunnel
+service-vlan vlan-id 10
+ssid-profile Warehouse
+traffic-profile Warehouse-traffic
+quit
+ap-group name GX
+vap-profile vap wlan 1 radio 0
+vap-profile vap wlan 1 radio 1
+radio-2g-profile Warehouse-2g radio 0
+radio-5g-profile Warehouse-5g radio 1
+quit
+ap-id 1 ap-mac c4b8-b469-3a40
+ap-name GX-AP7050DN-1
+ap-group GX
+quit
+ap-id 2 ap-mac c4b8-b469-33e0
+ap-name GX-AP7050DN-2
+ap-group GX
+quit
+ap-id 1
+radio 0
+channel 40mhz-minus 1
+eirp 20
+quit
+radio 1
+channel 80mhz 36
+eirp 20
+quit
+quit
+ap-id 2
+radio 0
+channel 40mhz-minus 11
+eirp 20
+quit
+radio 1
+channel 80mhz 52
+eirp 20
+quit
+quit
+ac protect enable
+ac protect protect-ac 192.168.99.2 priority 0
+ap-reset all
+quit
+hsb-service 0
+service-ip-port local-ip 192.168.100.1 peer-ip 192.168.100.2 local-data-port 10241 peer-data-port 10241
+quit
+hsb-service-type ap hsb-service 0
+hsb-service-type access-user hsb-service 0
+quit
+save
+
+################################################################################
+四、AC2（备 AC，AC6005）—— 除 IP/优先级外，WLAN 部分必须与 AC1 完全一致
+################################################################################
+system-view
+sysname AC2
+user-interface vty 0 4
+protocol inbound telnet
+authentication-mode aaa
+quit
+aaa
+local-user admin service-type telnet
+local-user admin privilege level 15
+local-user admin password irreversible-cipher __TELNET_PASSWORD__
+quit
+vlan 10
+description User-Wifi
+quit
+vlan 99
+description AP-Guanli
+quit
+vlan 100
+description Link--AC-vlan100--
+quit
+interface vlanif 99
+ip address 192.168.99.2 24
+quit
+interface vlanif 100
+ip address 192.168.100.2 24
+quit
+capwap source interface vlanif 99
+interface GigabitEthernet 0/0/1
+port link-type trunk
+port trunk allow-pass vlan 10 99 100
+quit
+ip route-static 0.0.0.0 0 192.168.100.11
+wlan
+rrm-profile name Warehouse-rrm
+calibrate auto-channel-select disable
+calibrate auto-txpower-select disable
+quit
+radio-2g-profile name Warehouse-2g
+rrm-profile Warehouse-rrm
+dot11bg supported-rate 6 9 11
+quit
+radio-5g-profile name Warehouse-5g
+rrm-profile Warehouse-rrm
+dot11a supported-rate 12 18
+quit
+traffic-profile name Warehouse-traffic
+rate-limit client down 8000
+rate-limit client up 8000
+quit
+ssid-profile name Warehouse
+ssid Warehouse
+quit
+vap-profile name vap
+forward-mode tunnel
+service-vlan vlan-id 10
+ssid-profile Warehouse
+traffic-profile Warehouse-traffic
+quit
+ap-group name GX
+vap-profile vap wlan 1 radio 0
+vap-profile vap wlan 1 radio 1
+radio-2g-profile Warehouse-2g radio 0
+radio-5g-profile Warehouse-5g radio 1
+quit
+ap-id 1 ap-mac c4b8-b469-3a40
+ap-name GX-AP7050DN-1
+ap-group GX
+quit
+ap-id 2 ap-mac c4b8-b469-33e0
+ap-name GX-AP7050DN-2
+ap-group GX
+quit
+ap-id 1
+radio 0
+channel 40mhz-minus 1
+eirp 20
+quit
+radio 1
+channel 80mhz 36
+eirp 20
+quit
+quit
+ap-id 2
+radio 0
+channel 40mhz-minus 11
+eirp 20
+quit
+radio 1
+channel 80mhz 52
+eirp 20
+quit
+quit
+ac protect enable
+ac protect protect-ac 192.168.99.1 priority 1
+quit
+hsb-service 0
+service-ip-port local-ip 192.168.100.2 peer-ip 192.168.100.1 local-data-port 10241 peer-data-port 10241
+quit
+hsb-service-type ap hsb-service 0
+hsb-service-type access-user hsb-service 0
+quit
+save
+
+################################################################################
+五、项目验证（对应报告截图）
+################################################################################
+在 AC1 上依次执行并截图：
+
+  1) display radio all
+     期望 4 张射频卡：
+       AP1 radio0  1/40M    AP1 radio1  36/80M
+       AP2 radio0  11/40M   AP2 radio1  52/80M
+
+  2) display ap config-info ap-id 1
+     期望 Config EIRP : 20
+
+  3) display radio-2g-profile name Warehouse-2g
+     期望 802.11bg support rate : 6 9 11
+
+  4) display radio-5g-profile name Warehouse-5g
+     期望 802.11a support rate : 12 18
+
+  5) display traffic-profile name Warehouse-traffic
+     期望 Rate limit client up(Kbps)   : 8000
+          Rate limit client down(Kbps) : 8000
+
+  6) display current-configuration configuration wlan-view
+     可见 channel 40mhz-minus 1 / channel 80mhz 36 /
+          channel 40mhz-minus 11 / channel 80mhz 52、eirp 20、
+          dot11bg supported-rate 6 9 11、dot11a supported-rate 12 18、
+          rate-limit client up/down 8000。
+
+  7) 高可用仍正常（项目6遗留验证，可选）：
+     AC1/AC2：display ac protect        -> enable，对端地址正确
+     AC1：display hsb-service 0         -> Service State : Connected
+     AC1：display ap all                -> AP 状态 nor
+     AC2：display ap all                -> AP 状态 stdby
+
+################################################################################
+六、如果是在项目6已配置好的拓扑上继续（增量模式）
+################################################################################
+L2SW、L3SW 不需要改动。AC1、AC2 分别执行下面的增量块即可（不要重复注册AP）。
+
+wlan
+rrm-profile name Warehouse-rrm
+calibrate auto-channel-select disable
+calibrate auto-txpower-select disable
+quit
+radio-2g-profile name Warehouse-2g
+rrm-profile Warehouse-rrm
+dot11bg supported-rate 6 9 11
+quit
+radio-5g-profile name Warehouse-5g
+rrm-profile Warehouse-rrm
+dot11a supported-rate 12 18
+quit
+traffic-profile name Warehouse-traffic
+rate-limit client down 8000
+rate-limit client up 8000
+quit
+ssid-profile name Warehouse
+ssid Warehouse
+quit
+vap-profile name vap
+ssid-profile Warehouse
+traffic-profile Warehouse-traffic
+quit
+ap-group name GX
+radio-2g-profile Warehouse-2g radio 0
+radio-5g-profile Warehouse-5g radio 1
+quit
+ap-id 1
+radio 0
+channel 40mhz-minus 1
+eirp 20
+quit
+radio 1
+channel 80mhz 36
+eirp 20
+quit
+quit
+ap-id 2
+radio 0
+channel 40mhz-minus 11
+eirp 20
+quit
+radio 1
+channel 80mhz 52
+eirp 20
+quit
+quit
+ap-reset all
+quit
+save
+
+（AC2 同样执行上述增量块；若 AC2 上 AP 显示 stdby 属正常。）
+
+################################################################################
+七、避坑与说明
+################################################################################
+1) AP 的 MAC 必须用 eNSP 里的真实值
+   PPT 规划表写的是 c4b8-b469-3a40 / c4b8-b469-33e0，但 eNSP 每次新建或重启 AP
+   的 MAC 可能变化。获取方法（任选）：
+     a. AC1 上先不注册，执行 display ap unauthorized 查看未授权 AP 的 MAC；
+     b. wlan 视图下临时 ap auth-mode no-auth，等 AP 上线后 display ap all 抄 MAC，
+        再改回 ap auth-mode mac-auth；
+     c. L2SW 上 display mac-address interface GigabitEthernet 0/0/1（AP1）
+        和 GigabitEthernet 0/0/2（AP2）。
+   把全文中的 c4b8-b469-3a40 / c4b8-b469-33e0 替换成实际 MAC 后再粘贴。
+
+2) 密码命令写法因设备而异（已实测）
+     S5700（L2SW/L3SW）：local-user admin password simple __TELNET_PASSWORD__
+     AC6005（AC1/AC2） ：local-user admin password irreversible-cipher __TELNET_PASSWORD__
+   AC 上先配 service-type、privilege level，最后配 password。
+
+3) 两台 AC 的 WLAN 配置必须逐字一致
+   ssid-profile / vap-profile / ap-group / AP 注册（MAC、AP 名、组名）必须相同；
+   仅 Vlanif99/100 的 IP、ac protect 对端地址和优先级不同（AC1=0，AC2=1，数值小为主）。
+
+4) ac protect 与 hsb-service 缺一不可
+   ac protect 在 wlan 视图配置，用 Vlanif99 地址互指，负责 AP 双链路；
+   hsb-service 在系统视图配置，用 Vlanif100 地址互指，负责 AP/用户表项热备份；
+   端口统一 10241。AC1 配完要 ap-reset all，把备份 AC 信息下发给 AP。
+
+5) display radio all 中射频状态一直 off
+   按 PPT 提示先关后开射频：
+     wlan
+     ap-id 1
+     radio 0
+     radio disable
+     undo radio disable
+     quit
+     radio 1
+     radio disable
+     undo radio disable
+     quit
+     quit
+   AP2 同理。等待 1~2 分钟再看 display radio all。
+
+6) 信道/频宽含义
+   2.4GHz 40MHz 只取 1 和 11（40mhz-minus 1 表示主信道1、辅信道向下扩展；
+   40mhz-minus 11 同理），5GHz 80MHz 取 36/52。这样两台 AP 在 2.4G 与 5G
+   上都互不重叠，符合 1、6、11 隔离原则。
+
+7) AP 管理地址与 DHCP
+   AP 从 L3SW 的 Vlanif99 接口池获取 192.168.99.x；若 AP 一直不上线，
+   在 L3SW 上 display ip pool interface vlanif99 used 查看是否拿到地址，
+   必要时排除 AC 占用的 .1/.2。
+
+8) 报告截图清单（项目7）
+   ① AC1：display radio all（4张射频卡信道/频宽）
+   ② AC1：display ap config-info ap-id 1（EIRP 20）
+   ③ AC1：display radio-2g-profile name Warehouse-2g（6 9 11）
+   ④ AC1：display radio-5g-profile name Warehouse-5g（12 18）
+   ⑤ AC1：display traffic-profile name Warehouse-traffic（8000/8000）
+   ⑥ AC1：display current-configuration configuration wlan-view（关键配置齐全）
+   另加：拓扑图截图、拓扑文件夹 zip 包
+================================================================================
