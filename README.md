@@ -12,8 +12,10 @@
 | 03 | [GRE over IPsec 企业广域安全互联](03-gre-over-ipsec-wan/) | GRE 隧道、IPsec ESP、IKE、OSPF over GRE | eNSP，6 台路由器 |
 | 04 | [智能无线网络部署与安全配置](04-wireless-lan/) | AC+AP、CAPWAP、WPA2、MAC 白名单、SSID 隔离 | eNSP |
 | 05 | [VMware 虚拟化与 RAID/LVM 存储实验](05-virtualization-storage/) | RAID10、LVM+XFS、LAMP、kodbox、LAN Segment | VMware，3 台 VM |
-| 06 | [Open vSwitch 源码编译（SDN）](06-sdn-openvswitch/) | SDN、OpenFlow、源码编译、内核模块加载 | Ubuntu |
+| 06 | [Open vSwitch 源码编译与 SDN 实验](06-sdn-openvswitch/) | SDN、OpenFlow、源码编译、QoS 入口限速、端口镜像 | Ubuntu |
 | 07 | [eNSP + VirtualBox 兼容性排障](07-ensp-vbox-troubleshooting/) | Windows 加固层、根因分析、开源协作 | Windows 11 |
+| 08 | [VMware ESXi 企业级虚拟化平台](08-esxi-enterprise-virtualization/) | ESXi 8、VCSA、iSCSI 共享存储、vMotion、pyVmomi | VMware，2 台 ESXi + VCSA |
+| 09 | [仓储中心无线网络性能优化](09-wlan-warehouse-p7/) | 双 AC 热备、信道/带宽规划、功率与速率集、终端限速 | eNSP，2 台 AC + 2 台 AP |
 
 ## 关于本仓库
 
@@ -23,4 +25,4 @@
 
 ## 技能覆盖
 
-`VLAN` `STP/MSTP` `链路聚合` `OSPF` `BGP` `VRRP` `策略路由` `ACL` `NAT/PAT` `PPPoE` `GRE` `IPsec VPN` `MPLS L3VPN` `IS-IS` `IPv6/OSPFv3` `WLAN AC+AP` `CAPWAP` `DHCP Snooping` `端口安全` `SNMP` `SSH` `NQA` `Linux` `Windows Server` `VMware ESXi` `RAID10` `LVM` `Open vSwitch`
+`VLAN` `STP/MSTP` `链路聚合` `OSPF` `BGP` `VRRP` `策略路由` `ACL` `NAT/PAT` `PPPoE` `GRE` `IPsec VPN` `MPLS L3VPN` `IS-IS` `IPv6/OSPFv3` `WLAN AC+AP` `CAPWAP` `双 AC 热备` `射频调优` `终端限速` `DHCP Snooping` `端口安全` `SNMP` `SSH` `NQA` `Linux` `Windows Server` `VMware ESXi` `VCSA` `iSCSI` `VMFS` `vMotion` `RAID10` `LVM` `Open vSwitch` `QoS` `端口镜像` `pyVmomi`
